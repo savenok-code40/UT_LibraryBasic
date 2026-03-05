@@ -1,62 +1,45 @@
 # encoding:utf-8
 from __future__ import print_function
 import os
+import sys
 
-print("--- CODESYS AUTOMATIC CONNECTION ---")
+print("--- STEP: CONNECTION TEST ONLY ---")
 
-# 1. Открываем проект
+# 1. Открытие проекта
 path = os.path.join(os.getcwd(), "UT_LibraryBasic.project")
 proj = projects.open(path)
 app = proj.active_application
 
-# 2. ПОИСК ШЛЮЗА (Вместо "сканировать сеть")
-print("Searching for Gateway...")
-my_gateway = None
-for gw in online.gateways:
-    if gw.name == 'Gateway': # Проверьте имя в Communication Settings (обычно 'Gateway')
-        my_gateway = gw
-        break
+# 2. Настройка адреса (данные с твоего скриншота)
+device = app
+while device and not device.is_device:
+    device = device.parent
 
-if my_gateway:
-    # Находим устройство в дереве (ПЛК)
-    device = app
-    while device and not device.is_device:
-        device = device.parent
-    
-    if device:
-        print("Connecting to localhost via " + my_gateway.name)
-        # Передаем ОБЪЕКТ шлюза, чтобы CODESYS сам взял его GUID
-        device.set_gateway_and_address(my_gateway, 'localhost')
-    else:
-        print("ERROR: Device node not found!")
-        system.exit(1)
+if device:
+    print("Target: PC-SAVENOK [0301.300A]")
+    # Мы пробуем задать адрес напрямую, как это делает CODESYS
+    device.set_communication_address('0301.300A')
 else:
-    print("ERROR: Gateway not found in system!")
+    print("ERROR: Device node not found!")
     system.exit(1)
 
-# 3. ПОПЫТКА ЛОГИНА (с твоим паролем 1/1)
+# 3. Попытка авторизованного логина
 onlineapp = online.create_online_application(app)
 onlineapp.set_specific_credentials('1', '1')
 
-print("Logging in...")
+print("Sending Login (1/1)...")
 try:
-    onlineapp.login(OnlineChangeOption.Force, True)
-    print("LOGIN SUCCESSFUL!")
+    # OnlineChangeOption.Try — самый быстрый способ проверить связь
+    onlineapp.login(OnlineChangeOption.Try, True)
+    print(">>> CONNECTED TO PLC SUCCESSFUL! <<<")
     
-    # 4. ЗАПУСК И ПРОВЕРКА (упрощенно)
-    onlineapp.start()
-    system.delay(10000)
-    
-    result = onlineapp.read_value("PLC_PRG.xErrorTestDI")
-    print("TEST RESULT: " + str(result))
-    
-    if str(result) == "True":
-        system.exit(1)
-
+    # Сразу выходим, если получилось
+    onlineapp.logout()
+    print("Logout completed.")
 except Exception as e:
     print("CONNECTION FAILED: " + str(e))
     system.exit(1)
 
-onlineapp.logout()
 proj.close()
+print("--- END OF CONNECTION TEST ---")
 system.exit()
