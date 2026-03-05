@@ -2,8 +2,9 @@
 from __future__ import print_function
 import os
 import sys
+import time
 
-print("--- CODESYS UNIT TEST: STARTING ---")
+print("--- CODESYS CI/CD: LOCAL SERVICE MODE ---")
 
 project_name = "UT_LibraryBasic.project"
 path = os.path.join(os.getcwd(), project_name)
@@ -12,42 +13,48 @@ if os.path.exists(path):
     proj = projects.open(path)
     app = proj.find("Application", True)
     
-    # 1. Подготовка и запуск в симуляторе
-    online.set_simulation_mode(True)
+    # 1. Компиляция перед загрузкой
+    print("Building project...")
+    proj.rebuild()
+    
+    # 2. ПОДКЛЮЧЕНИЕ К СЛУЖБЕ (БЕЗ ЭМУЛЯЦИИ)
+    print("Connecting to CODESYS Control Win V3 service...")
     onlineapp = online.create_online_application(app)
-    onlineapp.login(OnlineChangeOption.Force, True)
-    onlineapp.start()
     
-    # 2. Ожидание выполнения тестов coUnit
-    # 10 секунд обычно хватает для простых юнит-тестов
-    print("Executing CoUnit tests... please wait...")
-    system.delay(10000) 
-    
-    # 3. ЧТЕНИЕ ТВОЕЙ ПЕРЕМЕННОЙ (со скриншота)
     try:
-        # Читаем статус ошибки из PLC_PRG
-        test_failed = onlineapp.read_value("PLC_PRG.xErrorTestDI")
-        print("Variable PLC_PRG.xErrorTestDI = " + str(test_failed))
+        # Пытаемся залогиниться. Force — для полной перезагрузки кода тестов.
+        onlineapp.login(OnlineChangeOption.Force, True)
+        print("Login successful!")
         
-        # В IronPython BOOL читается как строка 'True' или 'False'
-        if str(test_failed) == "True":
-            print("FAILED: coUnit detected errors in SensDI tests!")
-            # Останавливаем ПЛК и выходим с ошибкой для Jenkins
+        # 3. ЗАПУСК ТЕСТОВ
+        print("Starting PLC Application...")
+        onlineapp.start()
+        
+        # Даем coUnit время (например, 15 секунд) прогнать все тесты
+        print("Tests are running in background service...")
+        time.sleep(15) 
+        
+        # 4. ПРОВЕРКА РЕЗУЛЬТАТА (твоя переменная)
+        error_status = onlineapp.read_value("PLC_PRG.xErrorTestDI")
+        print("Result of xErrorTestDI: " + str(error_status))
+        
+        if str(error_status) == "True":
+            print("FAILURE: Unit tests failed in CODESYS Control Win V3!")
             onlineapp.stop()
-            system.exit(1) 
+            system.exit(1)
         else:
-            print("PASSED: All SensDI tests completed successfully.")
-            
+            print("SUCCESS: All tests passed on local service.")
+
+        onlineapp.logout()
+        
     except Exception as e:
-        print("ERROR: Could not read variable from PLC. " + str(e))
+        print("CONNECTION ERROR: Is Control Win V3 service running? " + str(e))
         system.exit(1)
 
-    # 4. Завершение работы
-    onlineapp.logout()
     proj.close()
-    print("--- CODESYS UNIT TEST: FINISHED ---")
+    print("--- CI/CD FINISHED ---")
 else:
-    print("CRITICAL ERROR: Project file not found!")
+    print("Project file not found!")
     system.exit(1)
 
 system.exit()
