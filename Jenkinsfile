@@ -3,13 +3,14 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo 'Код скачан!'
+                echo 'Скачивание проекта из GitHub..'
             }
         }
-        stage('Build & Test') {
+        stage('Run CODESYS') {
             steps {
-                // Сюда мы позже впишем команду запуска твоих тестов
-                bat 'java -version' 
+				echo 'Запуск CODESYS в фоновом режиме...'
+                bat '"C:\\Program Files (x86)\\CODESYS 3.5.19.20\\CODESYS\\Common\\CODESYS.exe" --runscript="%WORKSPACE%\\run_tests.py" --noUI'
+            
             }
         }
     }
