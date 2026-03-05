@@ -3,14 +3,13 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo 'Скачиваем код из GitHub...'
+                echo 'Код скачан!'
             }
         }
         stage('Build & Test') {
             steps {
-                echo 'Запускаем тесты 1С...'
                 // Сюда мы позже впишем команду запуска твоих тестов
-                sh 'java -version' 
+                bat 'java -version' 
             }
         }
     }
