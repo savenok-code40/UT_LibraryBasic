@@ -1,68 +1,48 @@
 # encoding:utf-8
 from __future__ import print_function
 import os
-import sys
 
-print("--- CODESYS CI/CD: VERIFIED START ---")
+print("--- STARTING TESTS ---")
 
-# 1. Открытие проекта
-project_name = "UT_LibraryBasic.project"
-path = os.path.join(os.getcwd(), project_name)
+# 1. Открываем проект
+path = os.path.join(os.getcwd(), "UT_LibraryBasic.project")
+proj = projects.open(path)
+app = proj.active_application
 
-if os.path.exists(path):
-    print("Opening: " + path)
-    proj = projects.open(path)
-    
-    # 2. Поиск приложения (через основной проект)
-    app = proj.active_application
-    print("Application: " + app.get_name(False))
+# --- ВОТ ЭТА СТРОЧКА ЗАМЕНЯЕТ "СКАНЕР СЕТИ" ---
+# Находим устройство и жестко задаем ему адрес localhost
+device = app.parent
+while not device.is_device: device = device.parent
 
-    # 3. Настройка связи (через устройство)
-    # Ищем родительский узел устройства
-    device = app
-    while device and not device.is_device:
-        device = device.parent
-    
-    if device:
-        print("Setting Gateway for: " + device.get_name(False))
-        # Метод set_gateway_and_address точно есть у объектов Device
-        device.set_gateway_and_address('Gateway', 'localhost')
-    
-    # 4. Создание онлайн-соединения
-    onlineapp = online.create_online_application(app)
+# Мы находим первый попавшийся шлюз в системе и подключаемся к нему
+gateway = online.gateways[0] 
+device.set_gateway_and_address(gateway, 'localhost')
+print("Communication path set to LOCALHOST via " + gateway.name)
+# ---------------------------------------------
 
-    # 5. Логин (Force - для автоматической компиляции и загрузки)
-    print("Logging in to PLC...")
-    try:
-        # В SP19 это самый надежный способ "протолкнуть" код
-        onlineapp.login(OnlineChangeOption.Force, True)
-        
-        # 6. Запуск и ожидание
-        print("PLC Start...")
-        onlineapp.start()
-        system.delay(10000) # 10 секунд на тесты
+onlineapp = online.create_online_application(app)
 
-        # 7. Чтение результата
-        result = onlineapp.read_value("PLC_PRG.xErrorTestDI")
-        print("RESULT xErrorTestDI = " + str(result))
+# 2. Логин и запуск (пароль 1/1)
+onlineapp.set_specific_credentials('1', '1')
+onlineapp.login(OnlineChangeOption.Force, True)
+onlineapp.start()
 
-        if str(result) == "True":
-            print(">>> TESTS FAILED <<<")
-            onlineapp.logout()
-            proj.close()
-            system.exit(1)
-        else:
-            print(">>> TESTS PASSED <<<")
+# 3. Ждем 15 секунд
+print("Waiting 15 seconds...")
+system.delay(15000)
 
-        onlineapp.logout()
-    except Exception as e:
-        print("EXECUTION ERROR: " + str(e))
-        system.exit(1)
+# 4. Читаем переменную
+result = onlineapp.read_value("PLC_PRG.xErrorTestDI")
+print("RESULT xErrorTestDI: " + str(result))
 
+# 5. Итог
+if str(result) == "True":
+    print(">>> FAILED <<<")
+    onlineapp.logout()
     proj.close()
-    print("--- CI/CD FINISHED ---")
-else:
-    print("ERROR: File not found!")
     system.exit(1)
 
+print(">>> SUCCESS <<<")
+onlineapp.logout()
+proj.close()
 system.exit()
