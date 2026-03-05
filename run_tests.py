@@ -3,56 +3,87 @@ from __future__ import print_function
 import os
 import sys
 
-print("--- CODESYS CI/CD: STARTING FINAL TEST ---")
+print("--- CODESYS CI/CD: FINAL START ---")
 
-# 1. Закрываем лишние проекты, если они висят в памяти
+# 1. Очистка памяти перед запуском
 if projects.primary:
     projects.primary.close()
 
-# 2. Формируем путь к твоему проекту в Jenkins
+# 2. Определение путей
 project_name = "UT_LibraryBasic.project"
 path = os.path.join(os.getcwd(), project_name)
 
 if os.path.exists(path):
-    # Открываем проект
+    print("Opening project: " + path)
     proj = projects.open(path)
     
-    # ИСПОЛЬЗУЕМ ЭТАЛОННЫЙ МЕТОД ИЗ ТВОЕГО ПРИМЕРА
+    # Берем активное приложение (как в твоем примере)
     app = proj.active_application
+    if not app:
+        print("ERROR: No active application found in project!")
+        system.exit(1)
+        
     print("Active Application: " + app.get_name(False))
+
+    # 3. НАСТРОЙКА СВЯЗИ (устраняем ошибку NullReference)
+    # Находим родительское устройство для приложения
+    device = app
+    while device and not device.is_device:
+        device = device.parent
     
+    if device:
+        print("Setting communication path for device: " + device.get_name(False))
+        # Устанавливаем шлюз 'Gateway' и адрес 'localhost' (стандарт для службы Win V3)
+        device.set_gateway_and_address('Gateway', 'localhost')
+    else:
+        print("WARNING: Could not find parent device for application.")
+
+    # 4. СОЗДАНИЕ ОНЛАЙН-ПРИЛОЖЕНИЯ
     onlineapp = online.create_online_application(app)
 
-    # 3. Вход в устройство (локальная служба Control Win V3)
-    print("Logging in to PLC service...")
-    onlineapp.login(OnlineChangeOption.Try, True)
+    # 5. ВХОД В ПЛК (ЛОГИН)
+    print("Logging in to CODESYS Control Win V3...")
+    try:
+        # Используем Force, чтобы Jenkins всегда загружал свежий код тестов
+        onlineapp.login(OnlineChangeOption.Force, True)
+        print("Login successful!")
+    except Exception as e:
+        print("LOGIN ERROR: " + str(e))
+        proj.close()
+        system.exit(1)
 
-    # 4. Запуск, если еще не запущен
+    # 6. ЗАПУСК ПЛК (START)
     if onlineapp.application_state != ApplicationState.run:
-        print("Starting PLC...")
+        print("Starting PLC Application...")
         onlineapp.start()
 
-    # 5. Ждем выполнения тестов coUnit (10 секунд)
+    # 7. ОЖИДАНИЕ ВЫПОЛНЕНИЯ ТЕСТОВ (10 секунд)
     print("Executing tests... please wait...")
     system.delay(10000)
 
-    # 6. ЧТЕНИЕ ТВОЕЙ ПЕРЕМЕННОЙ (xErrorTestDI)
-    value = onlineapp.read_value("PLC_PRG.xErrorTestDI")
-    print("Result PLC_PRG.xErrorTestDI = " + str(value))
+    # 8. ЧТЕНИЕ РЕЗУЛЬТАТА (твоя переменная xErrorTestDI)
+    try:
+        value = onlineapp.read_value("PLC_PRG.xErrorTestDI")
+        print("RESULT: PLC_PRG.xErrorTestDI = " + str(value))
+        
+        # Анализ результата для Jenkins
+        if str(value) == "True":
+            print(">>> CRITICAL: UNIT TESTS FAILED! <<<")
+            onlineapp.logout()
+            proj.close()
+            system.exit(1) # Это заставит Jenkins "покраснеть"
+        else:
+            print(">>> SUCCESS: ALL TESTS PASSED! <<<")
+            
+    except Exception as e:
+        print("READ ERROR: Could not read test variable. " + str(e))
+        system.exit(1)
 
-    # 7. Вердикт для Jenkins
-    if str(value) == "True":
-        print("TEST FAILED!")
-        onlineapp.logout()
-        proj.close()
-        system.exit(1) # Jenkins выдаст ошибку
-    else:
-        print("TEST PASSED!")
-
-    # 8. Завершение
+    # 9. ЗАВЕРШЕНИЕ
     onlineapp.logout()
     proj.close()
-    print("--- CI/CD FINISHED SUCCESSFULLY ---")
+    print("--- CODESYS CI/CD: FINISHED SUCCESSFULLY ---")
+
 else:
     print("ERROR: Project file not found at " + path)
     system.exit(1)
