@@ -2,56 +2,57 @@
 from __future__ import print_function
 import os
 import sys
-import time
 
-print("--- CODESYS CI/CD: RUNNING TESTS ---")
+print("--- CODESYS CI/CD: STARTING FINAL TEST ---")
 
+# 1. Закрываем лишние проекты, если они висят в памяти
+if projects.primary:
+    projects.primary.close()
+
+# 2. Формируем путь к твоему проекту в Jenkins
 project_name = "UT_LibraryBasic.project"
 path = os.path.join(os.getcwd(), project_name)
 
 if os.path.exists(path):
+    # Открываем проект
     proj = projects.open(path)
-    app = proj.find("Application", True)
     
-    print("Target Application found: " + app.get_name())
+    # ИСПОЛЬЗУЕМ ЭТАЛОННЫЙ МЕТОД ИЗ ТВОЕГО ПРИМЕРА
+    app = proj.active_application
+    print("Active Application: " + app.get_name(False))
     
-    # 1. ПОДКЛЮЧЕНИЕ К СЛУЖБЕ CONTROL WIN V3
-    print("Connecting to local PLC service...")
     onlineapp = online.create_online_application(app)
-    
-    try:
-        # Login сам скомпилирует проект перед загрузкой
-        onlineapp.login(OnlineChangeOption.Force, True)
-        print("Login & Download successful!")
-        
-        # 2. ЗАПУСК ПЛК
-        print("Starting Application...")
+
+    # 3. Вход в устройство (локальная служба Control Win V3)
+    print("Logging in to PLC service...")
+    onlineapp.login(OnlineChangeOption.Try, True)
+
+    # 4. Запуск, если еще не запущен
+    if onlineapp.application_state != ApplicationState.run:
+        print("Starting PLC...")
         onlineapp.start()
-        
-        # Даем время тестам coUnit отработать (15 сек)
-        print("Tests are running in background...")
-        time.sleep(15) 
-        
-        # 3. ЧТЕНИЕ РЕЗУЛЬТАТА (твоя переменная)
-        # Обрати внимание: имя должно точно совпадать (с учетом регистра)
-        error_status = onlineapp.read_value("PLC_PRG.xErrorTestDI")
-        print("Variable xErrorTestDI value: " + str(error_status))
-        
-        if str(error_status) == "True":
-            print("FAILURE: Unit tests failed!")
-            onlineapp.stop()
-            system.exit(1) # Красный статус в Jenkins
-        else:
-            print("PASSED: All unit tests successful.")
 
+    # 5. Ждем выполнения тестов coUnit (10 секунд)
+    print("Executing tests... please wait...")
+    system.delay(10000)
+
+    # 6. ЧТЕНИЕ ТВОЕЙ ПЕРЕМЕННОЙ (xErrorTestDI)
+    value = onlineapp.read_value("PLC_PRG.xErrorTestDI")
+    print("Result PLC_PRG.xErrorTestDI = " + str(value))
+
+    # 7. Вердикт для Jenkins
+    if str(value) == "True":
+        print("TEST FAILED!")
         onlineapp.logout()
-        
-    except Exception as e:
-        print("CRITICAL ERROR during execution: " + str(e))
-        system.exit(1)
+        proj.close()
+        system.exit(1) # Jenkins выдаст ошибку
+    else:
+        print("TEST PASSED!")
 
+    # 8. Завершение
+    onlineapp.logout()
     proj.close()
-    print("--- CI/CD FINISHED ---")
+    print("--- CI/CD FINISHED SUCCESSFULLY ---")
 else:
     print("ERROR: Project file not found at " + path)
     system.exit(1)
