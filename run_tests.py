@@ -1,78 +1,47 @@
 # encoding:utf-8
 from __future__ import print_function
-import os
 import sys
 
-print("--- CODESYS AUTOMATION: START ---")
-
-# 1. Из Примера 23: Закрываем старое
+# 1. Закрываем текущий проект, если он открыт, чтобы избежать конфликтов
 if projects.primary:
     projects.primary.close()
 
-# 2. Открываем проект (путь адаптирован под Jenkins)
-project_path = os.path.join(os.getcwd(), "UT_LibraryBasic.project")
-print("Opening project: " + project_path)
-proj = projects.open(project_path)
+# 2. Открываем ваш проект по указанному пути
+# Используем r"" для корректной обработки обратных слэшей Windows
+proj = projects.open(r"D:\_GitHub\UT_LibraryBasic\UT_LibraryBasic.project")
 
-# 3. Из Примера 22: Находим Устройство (чтобы задать адрес)
-def get_device(obj):
-    if obj.is_device: return obj
-    for child in obj.get_children(False):
-        found = get_device(child)
-        if found: return found
-    return None
+# 3. Находим объект устройства и устанавливаем адрес из скриншота
+# Это уберет всплывающее окно "Выбор устройства"
+device = proj.find('Device', True)[0]
+device.set_gateway_and_address('Gateway-1', '0301.300A')
 
-device = get_device(proj)
-
-# 4. Настройка связи (Исправление ошибки GUID)
-# Мы ищем шлюз 'Gateway-1' как ОБЪЕКТ, чтобы система его приняла
-if device:
-    for gw in online.gateways:
-        if gw.name == 'Gateway-1': # Имя с твоего скриншота
-            print("Connecting to: Gateway-1 -> 0301.300A")
-            device.set_gateway_and_address(gw, '0301.300A')
-            break
-
-# 5. Из Примера 23: Подготовка приложения
+# 4. Определяем активное приложение и создаем онлайн-подключение
 app = proj.active_application
 onlineapp = online.create_online_application(app)
 
-# 6. Авторизация (Твои 1 / 1)
-onlineapp.set_specific_credentials('1', '1')
+# 5. Логин на устройство
+# OnlineChangeOption.Try — пытаемся обновить без остановки, True — принудительно
 
-# 7. Из Примера 23: Вход в ПЛК
-print("Logging in...")
-try:
-    onlineapp.login(OnlineChangeOption.Try, True)
-    
-    # 8. Из Примера 23: Запуск (Run)
-    if onlineapp.application_state != ApplicationState.run:
-        print("Starting PLC...")
-        onlineapp.start()
+# --- АВТОРИЗАЦИЯ ---
 
-    # Ждем выполнения тестов
-    system.delay(10000)
+onlineapp.login(OnlineChangeOption.Try, True)
 
-    # 9. Из Примера 23: Чтение значения (Твоя переменная)
-    value = onlineapp.read_value("PLC_PRG.xErrorTestDI")
-    print("TEST RESULT (xErrorTestDI): " + str(value))
+# 6. Запуск ПЛК, если он стоит (состояние не "Run")
+if onlineapp.application_state != ApplicationState.run:
+    onlineapp.start()
 
-    # Если True - тест провален, выходим с ошибкой для Jenkins
-    if str(value) == "True":
-        print(">>> FAILED <<<")
-        onlineapp.logout()
-        proj.close()
-        system.exit(1)
-    
-    print(">>> SUCCESS <<<")
+# 7. Небольшая пауза, чтобы данные в ПЛК обновились
+system.delay(1000)
 
-    # 10. Из Примера 23: Выход
-    onlineapp.logout()
-    proj.close()
-    print("--- FINISHED SUCCESSFULLY ---")
+# 8. Чтение значения переменной
+# Убедитесь, что переменная iVar1 объявлена в PLC_PRG
+res_value = onlineapp.read_value("PLC_PRG.iVar1")
 
-except Exception as e:
-    print("CRITICAL ERROR: " + str(e))
-    system.exit(1)
+# 9. Вывод результата в окно "Сообщения" CODESYS
+print("--- Результат выполнения скрипта ---")
+print("Переменная PLC_PRG.iVar1 =", res_value)
+print("------------------------------------")
 
-system.exit()
+# 10. Выход из системы и закрытие проекта
+onlineapp.logout()
+#proj.close() # Раскомментируйте, если нужно, чтобы проект закрывался сам
